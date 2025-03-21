@@ -1,37 +1,37 @@
-runGenePeakLink <- function (ATAC.se, RNAmat, genome, geneList = NULL, windowPadSize = 150000, 
+runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPadSize = 150000, 
                              normalizeATACmat = TRUE, nCores = 4, keepPosCorOnly = TRUE, 
                              keepMultiMappingPeaks = FALSE, n_bg = 100, p.cut = NULL) 
 {
-  stopifnot(inherits(ATAC.se, "RangedSummarizedExperiment"))
-  stopifnot(inherits(RNAmat, c("Matrix", "matrix")))
-  if (!all.equal(ncol(ATAC.se), ncol(RNAmat))) 
+  stopifnot(inherits(WNNATAC, "RangedSummarizedExperiment"))
+  stopifnot(inherits(WNNRNA, c("Matrix", "matrix")))
+  if (!all.equal(ncol(WNNATAC), ncol(WNNRNA))) 
     stop("Input ATAC and RNA objects must have same number of cells")
   message("Assuming paired scATAC/scRNA-seq data ..")
   
   # 原始峰范围
-  peakRanges.OG <- granges(ATAC.se)
-  rownames(ATAC.se) <- paste0("Peak", 1:nrow(ATAC.se))
-  ATACmat <- assay(ATAC.se)
+  peakRanges.OG <- granges(WNNATAC)
+  rownames(WNNATAC) <- paste0("Peak", 1:nrow(WNNATAC))
+  ATACmat <- assay(WNNATAC)
   
   # 归一化 ATAC 数据
   if (normalizeATACmat) 
     ATACmat <- centerCounts(ATACmat)
   
   # RNA 基因名检查
-  if (is.null(rownames(RNAmat))) 
+  if (is.null(rownames(WNNRNA))) 
     stop("RNA matrix must have gene names as rownames")
   
   # 去除全零的峰和基因
-  if (any(Matrix::rowSums(assay(ATAC.se)) == 0)) {
+  if (any(Matrix::rowSums(assay(WNNATAC)) == 0)) {
     message("Peaks with 0 accessibility across cells exist .. Removing them.")
-    peaksToKeep <- Matrix::rowSums(assay(ATAC.se)) != 0
-    ATAC.se <- ATAC.se[peaksToKeep, ]
+    peaksToKeep <- Matrix::rowSums(assay(WNNATAC)) != 0
+    WNNATAC <- WNNATAC[peaksToKeep, ]
     ATACmat <- ATACmat[peaksToKeep, ]
   }
-  if (any(Matrix::rowSums(RNAmat) == 0)) {
+  if (any(Matrix::rowSums(WNNRNA) == 0)) {
     message("Genes with 0 expression across cells exist .. Removing them.")
-    genesToKeep <- Matrix::rowSums(RNAmat) != 0
-    RNAmat <- RNAmat[genesToKeep, ]
+    genesToKeep <- Matrix::rowSums(WNNRNA) != 0
+    WNNRNA <- WNNRNA[genesToKeep, ]
   }
   
   # 获取 TSS 注释
@@ -57,8 +57,8 @@ runGenePeakLink <- function (ATAC.se, RNAmat, genome, geneList = NULL, windowPad
   }
   
   # 基因交集
-  genesToKeep <- intersect(names(TSSg), rownames(RNAmat))
-  RNAmat <- RNAmat[genesToKeep, ]
+  genesToKeep <- intersect(names(TSSg), rownames(WNNRNA))
+  WNNRNA <- WNNRNA[genesToKeep, ]
   TSSg <- TSSg[genesToKeep]
   
   # 保存有效基因列表
@@ -69,7 +69,7 @@ runGenePeakLink <- function (ATAC.se, RNAmat, genome, geneList = NULL, windowPad
   TSSflank <- GenomicRanges::flank(TSSg, width = windowPadSize, both = TRUE)
   
   # 提取峰中心
-  peakSummits <- resize(granges(ATAC.se), width = 1, fix = "center")
+  peakSummits <- resize(granges(WNNATAC), width = 1, fix = "center")
   
   # 基因与峰重叠
   genePeakOv <- findOverlaps(query = TSSflank, subject = peakSummits)
@@ -87,19 +87,19 @@ runGenePeakLink <- function (ATAC.se, RNAmat, genome, geneList = NULL, windowPad
   # 背景计算
   set.seed(123)
   cat("Determining background peaks ..\n")
-  if (is.null(rowData(ATAC.se)$bias)) {
+  if (is.null(rowData(WNNATAC)$bias)) {
     if (genome %in% "hg19") 
       myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     if (genome %in% "mm10") 
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
       myGenome <- BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38
-    ATAC.se <- chromVAR::addGCBias(ATAC.se, genome = myGenome)
+    WNNATAC <- chromVAR::addGCBias(WNNATAC, genome = myGenome)
   }
   
   cat("Using ", n_bg, " iterations ..\n\n")
   set.seed(123)
-  bg <- chromVAR::getBackgroundPeaks(ATAC.se, niterations = n_bg)
+  bg <- chromVAR::getBackgroundPeaks(WNNATAC, niterations = n_bg)
   cat("Computing gene-peak correlations ..\n")
   pairsPerChunk <- 500
   largeChunkSize <- 5000
@@ -112,7 +112,7 @@ runGenePeakLink <- function (ATAC.se, RNAmat, genome, geneList = NULL, windowPad
   for (i in 1:length(chunkStarts)) {
     cat("Running pairs: ", chunkStarts[i], "to", chunkEnds[i], 
         "\n")
-    ObsCor <- FigR::PeakGeneCor(ATAC = ATACmat, RNA = RNAmat, 
+    ObsCor <- FigR::PeakGeneCor(ATAC = ATACmat, RNA = WNNRNA, 
                                 OV = genePeakOv[chunkStarts[i]:chunkEnds[i]], chunkSize = pairsPerChunk, 
                                 ncores = nCores, bg = bg)
     gc()
