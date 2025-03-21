@@ -12,8 +12,8 @@ dim(ATAC) # Peaks x ATAC cells
 dim(RNA) # Genes x RNA cells
 genelist <- read.table("method/pbmc/my/processdata/high_variable_genes.txt")
 
-cisCorr <- runGenePeakLink(ATAC.se = ATAC,
-                                 RNAmat = RNA,
+cisCorr <- runGenePeakLink(WNNATAC = ATAC,
+                                 WNNRNA = RNA,
                                  genome = "hg38", # One of hg19, mm10 or hg38 
                                  geneList =genelist[[1]],
                                  windowPadSize = 150000,
@@ -39,7 +39,7 @@ dorcGenes <- GeneRankPlot(dorcTab = cisCorr.filt,
 numDorcs <- cisCorr.filt %>% group_by(Gene) %>% tally() %>% arrange(desc(n))
 numDorcs
 
-dorcMat <- getDORCScores(ATAC.se = ATAC,                          
+dorcMat <- getDORCScores(WNNATAC = ATAC,                          
                          dorcTab = cisCorr.filt,                         
                          geneList = dorcGenes,                         
                          nCores = 4)
@@ -49,12 +49,11 @@ saveRDS(dorcMat, file = "method/pbmc/result/dorcMat.rds")
 # 使用readRDS函数加载RDS文件  
 dorcMat <- readRDS(file = "method/pbmc/result/dorcMat.rds")
 
-figR.d <- TFGeneGRN(ATAC.se = ATAC, # Must be the same input as used in runGenePeakcorr()
+TF_Gene <- TFGeneGRN(WNNATAC = ATAC, # Must be the same input as used in runGenePeakcorr()
                      dorcTab = cisCorr.filt, # Filtered peak-gene associations
                      genome = "hg38",
                      dorcMat = dorcMat,
-                     rnaMat = RNA, 
+                     WNNRNA = RNA, 
                      nCores = 4)
-# 保存 figR.d 对象
-saveRDS(figR.d, file = "method/pbmc/result/figR_results.rds")
-
+# 保存 TF_Gene 对象
+saveRDS(TF_Gene, file = "method/pbmc/result/TF_Generesults.rds")
