@@ -1,12 +1,50 @@
-runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPadSize = 150000, 
+runGenePeakLink <- function (seurat, genome, geneList, windowPadSize = 150000, 
                              normalizeATACmat = TRUE, nCores = 4, keepPosCorOnly = TRUE, 
                              keepMultiMappingPeaks = FALSE, n_bg = 100, p.cut = NULL) 
 {
-  stopifnot(inherits(WNNATAC, "RangedSummarizedExperiment"))
-  stopifnot(inherits(WNNRNA, c("Matrix", "matrix")))
-  if (!all.equal(ncol(WNNATAC), ncol(WNNRNA))) 
-    stop("Input ATAC and RNA objects must have same number of cells")
-  message("Assuming paired scATAC/scRNA-seq data ..")
+
+  if (!"SCT" %in% names(seurat@assays)) 
+    stop("Seurat object must contain 'SCT' assay")
+  if (!"ATAC" %in% names(seurat@assays)) 
+    stop("Seurat object must contain 'ATAC' assay")
+  if (!"wsnn" %in% names(seurat@graphs)) 
+    stop("Seurat object must contain 'wsnn' graph in @graphs")
+  
+  wnn_matrix <- seurat@graphs$wsnn
+  wnn_matrix_normalized <- wnn_matrix / rowSums(wnn_matrix)
+  
+  rna <- seurat@assays$SCT@data
+  # rna: 获取Seurat对象中的RNA数据。对于小数据集，可以直接使用RNA层中的数据进行归一化处理。
+  # 这里使用SCT层进行数据处理，但对于小数据集，也可以选择直接通过RNA层（未经过SCT归一化）进行归一化，避免可能的过度归一化
+  
+  # RNA 加权平均
+  weighted_rna <- rna %*% wnn_matrix_normalized
+  # 查看结果的维度
+  dim(weighted_rna)
+  WNNRNA <- weighted_rna
+  
+  atac <- seurat@assays[["ATAC"]]@data
+  # ATAC 加权平均
+  weighted_atac <- atac %*% wnn_matrix_normalized
+  # 查看结果的维度
+  dim(weighted_atac)
+  
+  if (dim(weighted_rna)[2] != dim(weighted_atac)[2]) {
+    stop("Error: The number of columns in 'weighted_rna' and 'weighted_atac' do not match.\n",
+         "weighted_rna columns: ", dim(weighted_rna)[2], 
+         "weighted_atac columns: ", dim(weighted_atac)[2])
+  }
+  
+  peakRanges <- seurat@assays[["ATAC"]]@ranges
+  peakCounts <- weighted_atac
+  cellMeta <- DataFrame(seurat@meta.data)
+  WNNATAC <- SummarizedExperiment::SummarizedExperiment(assays = list(counts=peakCounts),
+                                                                 rowRanges = peakRanges,
+                                                                 colData = cellMeta)
+  # 确保必要包已加载
+  if (!requireNamespace("FigR", quietly = TRUE)) 
+    stop("Please install FigR: devtools::install_github('author/FigR')")
+  
   
   # 原始峰范围
   peakRanges.OG <- granges(WNNATAC)
@@ -35,12 +73,10 @@ runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPad
   }
   
   # 获取 TSS 注释
-  if (!genome %in% c("hg19", "hg38", "mm10")) 
+  if (!genome %in% c("hg38", "mm10")) 
     stop("You must specify one of hg19, hg38 or mm10 as a genome build for currently supported TSS annotations..\n")
   
-  switch(genome, hg19 = {
-    TSSg <- FigR::hg19TSSRanges
-  }, hg38 = {
+  switch(genome,  hg38 = {
     TSSg <- FigR::hg38TSSRanges
   }, mm10 = {
     TSSg <- FigR::mm10TSSRanges
@@ -63,8 +99,7 @@ runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPad
   
   # 保存有效基因列表
   youxiaogene <- genesToKeep
-  write.table(youxiaogene, file = "method/pbmc/my/processdata/youxiaogene.txt", row.names = FALSE, col.names = FALSE, quote = FALSE)
-  
+   
   # 构建 TSS 窗口
   TSSflank <- GenomicRanges::flank(TSSg, width = windowPadSize, both = TRUE)
   
@@ -77,8 +112,8 @@ runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPad
   # 保存有效峰列表
   youxiaopeak <- unique(subjectHits(genePeakOv))
   youxiaopeak_ranges <- peakRanges.OG[youxiaopeak]
-  write.table(as.data.frame(youxiaopeak_ranges), file = "method/pbmc/my/processdata/youxiaopeak.txt", row.names = FALSE, quote = FALSE, sep = "\t")
-  
+  numPairs <- length(youxiaopeak)
+   
   cat("\nNum genes overlapping TSS annotation and RNA matrix being considered: ", 
       length(genesToKeep), "\n")
   cat("Number of peaks overlapping gene TSS windows: ", 
@@ -88,8 +123,6 @@ runGenePeakLink <- function (WNNATAC, WNNRNA, genome, geneList = NULL, windowPad
   set.seed(123)
   cat("Determining background peaks ..\n")
   if (is.null(rowData(WNNATAC)$bias)) {
-    if (genome %in% "hg19") 
-      myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     if (genome %in% "mm10") 
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
