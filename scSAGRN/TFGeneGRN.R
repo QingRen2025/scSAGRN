@@ -1,42 +1,83 @@
-TFGeneGRN <-function (WNNATAC, dorcK = 30, dorcTab, n_bg = 50, genome, dorcMat, 
-          WNNRNA, dorcGenes = NULL, nCores = 1) 
+TFGeneGRN <-function (seurat, GeneK = 30, GeneTab, n_bg = 50, genome, GeneScore, Genes, nCores = 1) 
 {
-  stopifnot(all.equal(ncol(dorcMat), ncol(WNNRNA)))
-  if (!all(c("Peak", "Gene") %in% colnames(dorcTab))) 
-    stop("Expecting fields Peak and Gene in dorcTab data.frame .. see runGenePeakcorr function in BuenRTools")
-  if (all(grepl("chr", dorcTab$Peak, ignore.case = TRUE))) {
+  
+  if (!"SCT" %in% names(seurat@assays)) 
+    stop("Seurat object must contain 'SCT' assay")
+  if (!"ATAC" %in% names(seurat@assays)) 
+    stop("Seurat object must contain 'ATAC' assay")
+  if (!"wsnn" %in% names(seurat@graphs)) 
+    stop("Seurat object must contain 'wsnn' graph in @graphs")
+  
+  wnn_matrix <- seurat@graphs$wsnn
+  wnn_matrix_normalized <- wnn_matrix / rowSums(wnn_matrix)
+  
+  rna <- seurat@assays$SCT@data
+  # rna: 获取Seurat对象中的RNA数据。对于小数据集，可以直接使用RNA层中的数据进行归一化处理。
+  # 这里使用SCT层进行数据处理，但对于小数据集，也可以选择直接通过RNA层（未经过SCT归一化）进行归一化，避免可能的过度归一化
+  
+  # RNA 加权平均
+  weighted_rna <- rna %*% wnn_matrix_normalized
+  # 查看结果的维度
+  dim(weighted_rna)
+  WNNRNA <- weighted_rna
+  
+  atac <- seurat@assays[["ATAC"]]@data
+  # ATAC 加权平均
+  weighted_atac <- atac %*% wnn_matrix_normalized
+  # 查看结果的维度
+  dim(weighted_atac)
+  
+  if (dim(weighted_rna)[2] != dim(weighted_atac)[2]) {
+    stop("Error: The number of columns in 'weighted_rna' and 'weighted_atac' do not match.\n",
+         "weighted_rna columns: ", dim(weighted_rna)[2], 
+         "weighted_atac columns: ", dim(weighted_atac)[2])
+  }
+  
+  peakRanges <- seurat@assays[["ATAC"]]@ranges
+  peakCounts <- weighted_atac
+  cellMeta <- DataFrame(seurat@meta.data)
+  WNNATAC <- SummarizedExperiment::SummarizedExperiment(assays = list(counts=peakCounts),
+                                                        rowRanges = peakRanges,
+                                                        colData = cellMeta)
+  
+  
+  # 确保必要包已加载
+  if (!requireNamespace("FigR", quietly = TRUE)) 
+    stop("Please install FigR: devtools::install_github('author/FigR')")
+  stopifnot(all.equal(ncol(GeneScore), ncol(WNNRNA)))
+  if (!all(c("Peak", "Gene") %in% colnames(GeneTab))) 
+    stop("Expecting fields Peak and Gene in GeneTab data.frame .. see runGenePeakcorr function in BuenRTools")
+  if (all(grepl("chr", GeneTab$Peak, ignore.case = TRUE))) {
     usePeakNames <- TRUE
     message("Detected peak region names in Peak field")
     if (!(all(grepl("chr", rownames(WNNATAC), ignore.case = TRUE)))) 
-      stop("Peak regions provided in dorcTab data.frame but not found as rownames in input SE")
-    if (!all(dorcTab$Peak %in% rownames(WNNATAC))) 
-      stop("Found DORC peak region not present in input SE.. make sure DORC calling output corresponds to same input SE as the one provided here ..")
+      stop("Peak regions provided in GeneTab data.frame but not found as rownames in input SE")
+    if (!all(GeneTab$Peak %in% rownames(WNNATAC))) 
+      stop("Found Gene peak region not present in input SE.. make sure Gene calling output corresponds to same input SE as the one provided here ..")
   }
   else {
     usePeakNames <- FALSE
     message("Assuming peak indices in Peak field")
-    if (max(dorcTab$Peak) > nrow(WNNATAC)) 
-      stop("Found DORC peak index outside range of input SE.. make sure DORC calling output corresponds to same input SE as the one provided here ..")
+    if (max(GeneTab$Peak) > nrow(WNNATAC)) 
+      stop("Found Gene peak index outside range of input SE.. make sure Gene calling output corresponds to same input SE as the one provided here ..")
   }
-  if (is.null(dorcGenes)) {
-    dorcGenes <- rownames(dorcMat)
+  if (is.null(Genes)) {
+    Genes <- rownames(GeneScore)
   }
   else {
-    cat("Using specified list of dorc genes ..\n")
-    if (!(all(dorcGenes %in% rownames(dorcMat)))) {
-      cat("One or more of the gene names supplied is not present in the DORC matrix provided: \n")
-      cat(dorcGenes[!dorcGenes %in% rownames(dorcMat)], 
+    cat("Using specified list of genes ..\n")
+    if (!(all(Genes %in% rownames(GeneScore)))) {
+      cat("One or more of the gene names supplied is not present in the Gene matrix provided: \n")
+      cat(Genes[!Genes %in% rownames(GeneScore)], 
           sep = ", ")
       cat("\n")
       stop()
     }
   }
-  DORC.knn <- FNN::get.knn(data = t(scale(Matrix::t(dorcMat))), 
-                           k = dorcK)$nn.index
-  rownames(DORC.knn) <- rownames(dorcMat)
+  Gene.knn <- FNN::get.knn(data = t(scale(Matrix::t(GeneScore))), 
+                           k = GeneK)$nn.index
+  rownames(Gene.knn) <- rownames(GeneScore)
   if (is.null(SummarizedExperiment::rowData(WNNATAC)$bias)) {
-    if (genome %in% "hg19") 
-      myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     if (genome %in% "mm10") 
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
@@ -78,26 +119,26 @@ TFGeneGRN <-function (WNNATAC, dorcK = 30, dorcTab, n_bg = 50, genome, dorcMat,
     bg <- chromVAR::getBackgroundPeaks(WNNATAC, niterations = n_bg)
   }
   cat("Testing ", length(motifsToKeep), " TFs\n")
-  cat("Testing ", nrow(dorcMat), " DORCs\n")
+  cat("Testing ", nrow(GeneScore), " Genes\n")
   library(doParallel)
   if (nCores > 1) 
     message("Running FigR using ", nCores, " cores ..\n")
   opts <- list()
-  pb <- txtProgressBar(min = 0, max = length(dorcGenes), style = 3)
+  pb <- txtProgressBar(min = 0, max = length(Genes), style = 3)
   progress <- function(n) setTxtProgressBar(pb, n)
   opts <- list(progress = progress)
   time_elapsed <- Sys.time()
   cl <- parallel::makeCluster(nCores)
   clusterEvalQ(cl, .libPaths())
   doSNOW::registerDoSNOW(cl)
-  mZtest.list <- foreach(g = dorcGenes, .options.snow = opts, 
+  mZtest.list <- foreach(g = Genes, .options.snow = opts, 
                          .packages = c("FigR", "dplyr", "Matrix", "Rmpfr")) %dopar% 
     {
-      DORCNNpeaks <- unique(dorcTab$Peak[dorcTab$Gene %in% 
-                                           c(g, rownames(dorcMat)[DORC.knn[g, ]])])
+      GeneNNpeaks <- unique(GeneTab$Peak[GeneTab$Gene %in% 
+                                           c(g, rownames(GeneScore)[Gene.knn[g, ]])])
       if (usePeakNames) 
-        DORCNNpeaks <- which(rownames(WNNATAC) %in% DORCNNpeaks)
-      mZ <- FigR::motifPeakZtest(peakSet = DORCNNpeaks, 
+        GeneNNpeaks <- which(rownames(WNNATAC) %in% GeneNNpeaks)
+      mZ <- FigR::motifPeakZtest(peakSet = GeneNNpeaks, 
                                  bgPeaks = bg, tfMat = assay(motif_ix))
       mZ <- mZ[, c("gene", "z_test")]
       colnames(mZ)[1] <- "Motif"
@@ -105,8 +146,8 @@ TFGeneGRN <-function (WNNATAC, dorcK = 30, dorcTab, n_bg = 50, genome, dorcMat,
       mZ$Enrichment.P <- 2 * pnorm(abs(mZ$Enrichment.Z), 
                                    lower.tail = FALSE)
       mZ$Enrichment.log10P <- sign(mZ$Enrichment.Z) * -log10(mZ$Enrichment.P)
-      mZ <- cbind(DORC = g, mZ)
-      corr.r <- cor(dorcMat[g, ], t(as.matrix(WNNRNA[mZ$Motif, 
+      mZ <- cbind(Gene = g, mZ)
+      corr.r <- cor(GeneScore[g, ], t(as.matrix(WNNRNA[mZ$Motif, 
       ])), method = "spearman")
       stopifnot(all.equal(colnames(corr.r), mZ$Motif))
       mZ$Corr <- corr.r[1, ]
