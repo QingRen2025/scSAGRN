@@ -23,14 +23,14 @@ write.csv(Peak_Gene,file="method/pbmc/result/pbmc_peak_gene.csv",row.names=F)
 Peak_Gene.filt <- Peak_Gene%>% filter(pvalZ <= 0.05)
 Gene <- unique(Peak_Gene.filt$Gene)
 
-GeneScore <- runGeneScore(A549,                          
+GeneScore <- runGeneScore(pbmc,                          
                          peakgene = Peak_Gene.filt,                         
                          geneList = Gene,                         
                          nCores = 4)
 
 saveRDS(GeneScore, file = "method/pbmc/result/GeneScore.rds")
 
-TF_Gene <- TFGeneGRN(A549, 
+TF_Gene <- TFGeneGRN(pbmc, 
                      peakgene = Peak_Gene.filt, 
                      genome = "hg38",
                      GeneScore = GeneScore,
