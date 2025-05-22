@@ -1,4 +1,4 @@
-TFGeneGRN <-function (seurat, GeneK = 30, GeneTab, n_bg = 50, genome, GeneScore, Genes, nCores = 1) 
+TFGeneGRN <-function (seurat, GeneK = 30, peakgene, n_bg = 50, genome, GeneScore, Genes = NULL, nCores = 1) 
 {
   
   if (!"SCT" %in% names(seurat@assays)) 
@@ -45,20 +45,20 @@ TFGeneGRN <-function (seurat, GeneK = 30, GeneTab, n_bg = 50, genome, GeneScore,
   if (!requireNamespace("FigR", quietly = TRUE)) 
     stop("Please install FigR: devtools::install_github('author/FigR')")
   stopifnot(all.equal(ncol(GeneScore), ncol(WNNRNA)))
-  if (!all(c("Peak", "Gene") %in% colnames(GeneTab))) 
-    stop("Expecting fields Peak and Gene in GeneTab data.frame .. see runGenePeakcorr function in BuenRTools")
-  if (all(grepl("chr", GeneTab$Peak, ignore.case = TRUE))) {
+  if (!all(c("Peak", "Gene") %in% colnames(peakgene))) 
+    stop("Expecting fields Peak and Gene in peakgene data.frame .. see runGenePeakcorr function in BuenRTools")
+  if (all(grepl("chr", peakgene$Peak, ignore.case = TRUE))) {
     usePeakNames <- TRUE
     message("Detected peak region names in Peak field")
     if (!(all(grepl("chr", rownames(WNNATAC), ignore.case = TRUE)))) 
-      stop("Peak regions provided in GeneTab data.frame but not found as rownames in input SE")
-    if (!all(GeneTab$Peak %in% rownames(WNNATAC))) 
+      stop("Peak regions provided in peakgene data.frame but not found as rownames in input SE")
+    if (!all(peakgene$Peak %in% rownames(WNNATAC))) 
       stop("Found Gene peak region not present in input SE.. make sure Gene calling output corresponds to same input SE as the one provided here ..")
   }
   else {
     usePeakNames <- FALSE
     message("Assuming peak indices in Peak field")
-    if (max(GeneTab$Peak) > nrow(WNNATAC)) 
+    if (max(peakgene$Peak) > nrow(WNNATAC)) 
       stop("Found Gene peak index outside range of input SE.. make sure Gene calling output corresponds to same input SE as the one provided here ..")
   }
   if (is.null(Genes)) {
@@ -82,6 +82,8 @@ TFGeneGRN <-function (seurat, GeneK = 30, GeneTab, n_bg = 50, genome, GeneScore,
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
       myGenome <- BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38
+    if (genome %in% "hg19") 
+      myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     WNNATAC <- chromVAR::addGCBias(WNNATAC, genome = myGenome)
   }
   packagePath <- find.package("FigR", lib.loc = NULL, quiet = TRUE)
@@ -134,7 +136,7 @@ TFGeneGRN <-function (seurat, GeneK = 30, GeneTab, n_bg = 50, genome, GeneScore,
   mZtest.list <- foreach(g = Genes, .options.snow = opts, 
                          .packages = c("FigR", "dplyr", "Matrix", "Rmpfr")) %dopar% 
     {
-      GeneNNpeaks <- unique(GeneTab$Peak[GeneTab$Gene %in% 
+      GeneNNpeaks <- unique(peakgene$Peak[peakgene$Gene %in% 
                                            c(g, rownames(GeneScore)[Gene.knn[g, ]])])
       if (usePeakNames) 
         GeneNNpeaks <- which(rownames(WNNATAC) %in% GeneNNpeaks)
