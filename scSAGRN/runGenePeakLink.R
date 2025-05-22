@@ -72,12 +72,14 @@ runGenePeakLink <- function (seurat, genome, geneList, windowPadSize = 150000,
     WNNRNA <- WNNRNA[genesToKeep, ]
   }
   
-  # 获取 TSS 注释
-  if (!genome %in% c("hg38", "mm10")) 
+ # 获取 TSS 注释
+  if (!genome %in% c("hg38", "hg19", "mm10")) 
     stop("You must specify one of hg19, hg38 or mm10 as a genome build for currently supported TSS annotations..\n")
   
   switch(genome,  hg38 = {
     TSSg <- FigR::hg38TSSRanges
+  }, hg19 = {
+    TSSg <- FigR::hg19TSSRanges
   }, mm10 = {
     TSSg <- FigR::mm10TSSRanges
   })
@@ -127,6 +129,8 @@ runGenePeakLink <- function (seurat, genome, geneList, windowPadSize = 150000,
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
       myGenome <- BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38
+    if (genome %in% "hg19") 
+      myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     WNNATAC <- chromVAR::addGCBias(WNNATAC, genome = myGenome)
   }
   
