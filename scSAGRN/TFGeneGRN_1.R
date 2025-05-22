@@ -82,6 +82,8 @@ TFGeneGRN <-function (seurat, GeneK = 30, peakgene, n_bg = 50, genome, GeneScore
       myGenome <- BSgenome.Mmusculus.UCSC.mm10::BSgenome.Mmusculus.UCSC.mm10
     if (genome %in% "hg38") 
       myGenome <- BSgenome.Hsapiens.UCSC.hg38::BSgenome.Hsapiens.UCSC.hg38
+    if (genome %in% "hg19") 
+      myGenome <- BSgenome.Hsapiens.UCSC.hg19::BSgenome.Hsapiens.UCSC.hg19
     WNNATAC <- chromVAR::addGCBias(WNNATAC, genome = myGenome)
   }
   packagePath <- find.package("FigR", lib.loc = NULL, quiet = TRUE)
