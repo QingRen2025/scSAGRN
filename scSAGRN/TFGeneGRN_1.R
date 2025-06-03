@@ -11,8 +11,8 @@ TFGeneGRN <-function (seurat, GeneK = 30, peakgene, n_bg = 50, genome, GeneScore
   wnn_matrix <- seurat@graphs$wsnn
   wnn_matrix_normalized <- wnn_matrix / rowSums(wnn_matrix)
   
-  rna <- A549@assays[["RNA"]]@layers$data
-  gene_names <- rownames(A549@assays[["RNA"]]@features@.Data)  
+  rna <- seurat@assays[["RNA"]]@layers$data
+  gene_names <- rownames(seurat@assays[["RNA"]]@features@.Data)  
   rownames(rna) <- gene_names  #对应基准测试数据集的处理
   
   # RNA 加权平均
