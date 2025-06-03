@@ -1,7 +1,5 @@
 # scSAGRN
 
-Overview
-
 This pipeline is used to infer Gene Regulatory Networks (GRNs) from single-cell RNA-seq and ATAC-seq data, including peak-gene links and transcription factor (TF)-gene links. The pipeline is divided into the following steps:
 
 1.Raw Data Preparation
